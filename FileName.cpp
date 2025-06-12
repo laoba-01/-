@@ -40,6 +40,8 @@ IMAGE img_bk_3;                    //背景3
 IMAGE img_bk_4;                    //背景4
 IMAGE img_bk_5;                    //背景5
 IMAGE img_bk_6;                    //背景6
+IMAGE LoseView;                    //游戏结束界面
+IMAGE menuBackGround;
 struct Collision {
     double x, y, w, h;//碰撞体 左上角坐标，长 宽
 };
@@ -56,6 +58,7 @@ void ListenerChecker();
 void IntroductionVeiw();
 void InitIntroduction();
 void GameLoop();
+void FinishChecker();
 void RoomInit();
 void EndChecker();
 void InitLoseView();
@@ -63,8 +66,8 @@ void InitWinView();
 void winView();
 void loseView();
 void DrawPlatform(vector<Collision> platform);
-void DrawRoom();
-
+void DrawRoom2();
+void DrawRoom3();
 inline void flip_image(IMAGE* src, IMAGE* dst)	//水平翻转函数
 {
     int w = src->getwidth();
@@ -377,56 +380,53 @@ void AnimationBuild()
 
 struct Button {
     int x, y, w, h;
-    const char* text;//文本
-    Button() : x(0), y(0), w(0), h(0), text(nullptr) {}
-    //Button(int a, int b, int c, int d,char *tmpTxt) :x(a), y(b), w(c), h(d), text(tmpTxt) {};
-    bool inButton()//判断鼠标是否在按钮内
-    {
-        if (msg.x > x && msg.x < x + w && msg.y > y && msg.y < y + h) {
-            return true;
+    int lastTime=clock();
+    int needTime=200;
+    const char* text;
+    bool isClicked = false; // 添加点击状态
+
+    bool inButton() {
+        return (msg.x >= x && msg.x <= x + w && msg.y >= y && msg.y <= y + h);
+    }
+
+    void update() {
+        isClicked = false;
+        peekmessage(&msg, EX_MOUSE);
+        if (inButton()&& msg.message == WM_LBUTTONDOWN&&clock()-lastTime>=needTime) {
+            isClicked = true;
+            lastTime = clock();
+            //flushmessage(EX_MOUSE); // 清除消息避免重复触发
         }
         
-        return false;
     }
-    bool istrigger() {
-        if (peekmessage(&msg, EX_MOUSE) && msg.message == WM_LBUTTONDOWN) {
-            if (inButton()) {
-                // 清除消息，避免重复触发
-                flushmessage(EX_MOUSE);
-                return true;
-            }
-        }
-        return false;
-    }
-    void init() {//初始化按钮的位置和大小和文本和颜色
 
-        double tw = w * 0.7;        //文本文字宽度
-        double th = h * 0.7;        //文本高度
+    bool istrigger() {
+        if (isClicked) {
+            cout << "trigger" << endl;
+        }
+        return isClicked;
+    }
+
+    void init() {    // 确保文本不为空
+        if (text == nullptr) {
+            text = _T("");
+        }
+
+        double tw = w * 0.7;        // 文本宽度
+        double th = h * 0.7;        // 文本高度
         double tx = x + (w - tw) / 2;
         double ty = y + (h - th) / 2;
-        IMAGE img;
 
-        
-
-        //按钮边框
+        // 按钮边框
         setlinecolor(BLACK);
         setlinestyle(PS_SOLID, 3);
 
-        //不同状态的按钮
-        if (!inButton()) {//默认状态
-            setfillcolor(RGB(52, 152, 219));
-            fillroundrect(x, y, x + w, y + h, 30, 30);
-        }
-        else if (inButton() && msg.message == WM_LBUTTONDOWN) {//被点击状态
-            setfillcolor(RGB(26, 82, 118));
-            fillroundrect(x, y, x + w, y + h, 30, 30);
-        }
-        else if (inButton()) {//鼠标悬停
-            setfillcolor(RGB(41, 128, 185));
-            fillroundrect(x, y, x + w, y + h, 30, 30);
-        }
-        //绘制文本
-        settextstyle(th, tw / strlen(text), "宋体");
+        // 只绘制默认状态，不处理悬停效果
+        setfillcolor(RGB(52, 152, 219));
+        fillroundrect(x, y, x + w, y + h, 30, 30);
+
+        // 绘制文本
+        settextstyle(th, tw / _tcslen(text), _T("宋体"));
         settextcolor(BLACK);
         setbkmode(TRANSPARENT);
         outtextxy(tx, ty, text);
@@ -437,7 +437,7 @@ struct Button {
 Button ListenButton[2];
 Button Buttons[4];
 Button BackButton;
-
+int RoomId = 1;
 struct Player {
     double x, y;//左上角坐标
     Collision collision;//碰撞体
@@ -462,7 +462,7 @@ struct Player {
     int timer = interval;
 
     bool isSkillActive;			//是否正在释放技能
-    int currentSkill;			//当前技能类型（0/1/2/3） 0代表普攻，先写0和1
+    int currentSkill;			//当前技能类型（1/2/3）
     int currentFrame;			//当前动画帧
     clock_t lastFrameTime;		//上一帧时间
     //冷却系统
@@ -472,9 +472,9 @@ struct Player {
     clock_t lastSkillTime1;
     clock_t lastSkillTime2;
     clock_t lastSkillTime3;
-    clock_t cooldownDuration1;
-    clock_t cooldownDuration2;
-    clock_t cooldownDuration3;
+    clock_t cooldownDuration1=8000;
+    clock_t cooldownDuration2=8000;
+    clock_t cooldownDuration3=8000;
     //技能状态结构体 存储技能释放时的位置和方向以及技能进行到了第几帧
     struct SkillState {
         bool active = false;//技能是否在进行中
@@ -491,16 +491,6 @@ public:
     int hp;
     Collision collision;//碰撞体
 
-    /* Beetle() {
-         animIdleLeft = new Animation(atlasBeetleIdleLeft, 45);
-         animIdleRight = new Animation(atlasBeetleIdleRight, 45);
-         animMoveLeft = new Animation(atlasBeetleMoveLeft, 45);
-         animMoveRight = new Animation(atlasBeetleMoveRight, 45);
-         animAttackLeft = new Animation(atlasBeetleAttackLeft, 45);
-         animAttackRight = new Animation(atlasBeetleAttackRight, 45);
-     }*/
-
-     //private:
     int atk;//攻击力
 
     vector<IMAGE>runLeft;//朝左走
@@ -548,9 +538,6 @@ struct Mosquito {
     int atkTime;//攻击需要间隔
     int frame;//攻击已经延迟的帧数
     int frameMax;//攻击延迟几帧，暂定3
-    //int followingFrame;//追击已延迟帧数
-    //int followingFrameMax;//追击延迟几帧，暂定30
-    //vector<double>tag;
 
     //图集
     vector<IMAGE>runLeft;//朝左走
@@ -577,13 +564,86 @@ struct Mosquito {
     int idleDistance;//行走距离------最大行走距离idleMaxDistance
     int atkLast;//上一次攻击时间 clock（）-----------攻击冷却时间atkTime
 };
+struct Novice {
+    //数值
+    int maxHp, atk;//血量、攻击力
+    Collision collision;//碰撞体
+    Collision collisionTmp;
+    double speed;//速度
+    int view;//视线长度
+    int readysta;//开始观看的时间
+    int readyTime;//需要的观看时长
+    int atkRange;//近战攻击距离
+    //int atkW, atkH;
+    int atkTime;//攻击需要间隔
+    int frame;//攻击已经延迟的帧数
+    int frameMax;//攻击延迟几帧，暂定3
+    vector<double>tag;//观看时长达到，就朝tag冲刺
+
+    //图集
+    vector<IMAGE>idleLeft;//朝左待机
+    vector<IMAGE>idleRight;//超右待机
+    vector<IMAGE>dieLeft;//超左死
+    vector<IMAGE>dieRight;//朝右死
+    vector<IMAGE>atkLeft;//朝右攻击
+    vector<IMAGE>atkRight;//朝左攻击
+    vector<IMAGE>dashLeft;//朝左攻击
+    vector<IMAGE>dashRight;//朝右攻击
+    int idleIndMax;
+    int dieIndMax;
+    int atkIndMax;
+    int dashIndMax;
+
+    //状态
+    bool right;//朝向
+    bool readydash;//蓄力中
+    bool dash;//冲刺
+    bool canAtk;//进入攻击距离
+    bool attacking;//攻击中
+    bool deathEnd;//死亡动画播放完毕,彻底死亡
+
+    //图集下标
+    int deathInd;//死亡图片下标
+    int idleInd;//待机下标
+    int atkInd;//攻击下标
+    int dashInd;//冲刺状态
+
+    //成对变量
+    int hp;//血量--------最大血量maxHP
+    int atkLast;//上一次攻击时间 clock（）-----------攻击冷却时间atkTime
+};
+
+//陷阱
+struct Trap {
+    int x, y, w, h;
+    int interval = 2000;//伤害间隔为一秒，可调
+    int timer_player = 0; //伤害判定计时器
+    IMAGE img;
+    int damage = 5;
+};
+
 
 //房间--------------------------------------------------------------------------------------
+
 vector<Collision> platforms;//平台
 vector<Beetle> Beetles;//甲壳虫
 vector<Mosquito> Mosquitos;//蚊子
-//vector<Trap> Traps;//陷阱
-int EnemyCounter;//敌人计数器
+vector<Novice> Novices;//
+vector<Trap> Traps;//陷阱
+int EnemyCounter1;//敌人计数器
+vector<Collision> platforms2;//平台
+vector<Beetle> Beetles2;//甲壳虫
+vector<Mosquito> Mosquitos2;//蚊子
+vector<Novice> Novices2;//蚊子
+vector<Trap> Traps2;//陷阱
+int EnemyCounter2;//敌人计数器
+vector<Collision> platforms3;//平台
+vector<Beetle> Beetles3;//甲壳虫
+vector<Mosquito> Mosquitos3;//蚊子
+vector<Novice> Novices3;
+vector<Trap> Traps3;
+int EnemyCounter3;
+
 double playerInitx = 20, playerInity = 250;//玩家初始化位置
 
 //----------------------------------------------------------------玩家相关------------------------------------------------------------------------------------------------------
@@ -594,8 +654,8 @@ Player player;
 
 //玩家函数声明
 void PlayerGetMsg();
-int PlayercheckObstacleCollisionX();
-int PlayercheckObstacleCollisionY();
+int PlayercheckObstacleCollisionX2();
+int PlayercheckObstacleCollisionY2();
 void Playermove();
 void PlayerJump();
 void PlayeruseSkill(int skillType);
@@ -607,271 +667,27 @@ void loadskill_skill();
 void PlayerrenderPlayer();
 void PlayerUpdate();
 void ShowHp();
+void FinishChecker();
+int PlayercheckObstacleCollisionY1();
+int PlayercheckObstacleCollisionX1();
+bool isOverlapping(int x1, int y1, int w1, int h1, int x2, int y2, int w2, int h2);
+void PlayerAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& Beetles,vector<Novice>& Novices);
+void PlayerAttack(int delta, vector<Novice>& Novices);
 void PlayerAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& Beetles);
-//初始化玩家状态
-//处理玩家和物体之间的碰撞
-//int PlayercheckObstacleCollision() {
-//    double player_x1 = player.collision.x;
-//    double player_y1 = player.collision.y;
-//    double player_x2 = player_x1 + player.collision.w;
-//    double player_y2 = player_y1 + player.collision.h;
-//    int collisionDir = 0; // 0=无碰撞，1=顶部，2=底部，3=左侧，4=右侧
-//
-//    //platforms删除段落
-//    for (const auto& platform : platforms) {
-//        double platform_x1 = platform.x;
-//        double platform_y1 = platform.y;
-//        double platform_x2 = platform.x + platform.w;
-//        double platform_y2 = platform.y + platform.h;
-//
-//        // 快速排除不相交的情况（优化条件顺序，先判断明显不相交的边）
-//        if (player_x2 <= platform_x1 || player_x1 >= platform_x2 ||
-//            player_y2 <= platform_y1 || player_y1 >= platform_y2) {
-//            continue;
-//        }
-//
-//        double overlapLeft = player_x2 - platform_x1;   // 左侧碰撞重叠量
-//        double overlapRight = platform_x2 - player_x1;  // 右侧碰撞重叠量
-//        double overlapTop = player_y2 - platform_y1;    // 顶部碰撞重叠量（下落时接触平台）
-//        double overlapBottom = platform_y2 - player_y1; // 底部碰撞重叠量（上升时接触天花板）
-//
-//        // 找出最小重叠方向（优先处理垂直碰撞，避免水平碰撞时误判地面状态）
-//        double minOverlap = min(min(overlapLeft, overlapRight), min(overlapTop, overlapBottom));
-//
-//        if (minOverlap == overlapTop) {
-//            collisionDir = 1;
-//            player.isGround = true; // 仅当顶部碰撞时标记为地面
-//        }
-//        else if (minOverlap == overlapBottom) {
-//            collisionDir = 2;
-//        }
-//        else if (minOverlap == overlapLeft) {
-//            collisionDir = 3;
-//        }
-//        else if (minOverlap == overlapRight) {
-//            collisionDir = 4;
-//        }
-//
-//        // 仅处理第一个碰撞的平台（保持原有逻辑，避免多平台干扰）
-//        break;
-//    }
-//    return collisionDir;
-//}
-//处理player在水平方向上的移动
-//void Playermove() {
-//    if (player.isFacingLeft == true)player.dir == 1;
-//    else player.dir = -1;
-//    // 重置水平速度（使用player.vx而非未定义的vx）
-//    player.vx = 0;
-//    // 根据方向计算速度
-//    player.vx = player.speed * player.dir;
-//
-//    // 记录上一帧的碰撞体X坐标
-//    double lastPosX = player.collision.x;
-//
-//    // 更新碰撞体X坐标
-//    player.collision.x += player.vx;
-//
-//    // 执行障碍物碰撞检测
-//    int collisionResult = PlayercheckObstacleCollision();
-//
-//
-//    // 处理水平方向碰撞
-//    if (collisionResult == 3 || collisionResult == 4) {
-//        // 恢复上一帧位置
-//        player.collision.x = lastPosX;
-//        // 碰撞后速度归零
-//        player.vx = 0;
-//    }
-//
-//    // 更新玩家显示坐标（与碰撞体同步）
-//    player.x = player.collision.x;
-//
-//    // 更新朝向逻辑
-//    if (player.vx > 0) {
-//        player.isFacingLeft = false; // 向右移动时面朝右
-//    }
-//    else if (player.vx < 0) {
-//        player.isFacingLeft = true;  // 向左移动时面朝左
-//    }
-//};
-////耿欣player是否在跳越状态
-//void PlayerJump() {
-//    if (player.isGround) {
-//        player.vy = -player.jumpForce;
-//        player.isGround = false;
-//    }
-//}
-////技能的相关状态
-//void PlayeruseSkill(int skillType) {
-//    clock_t now = clock();
-//
-//    switch (skillType) {
-//    case 1: // K键 - 技能1
-//        if (!player.isSkillOnCooldown1) {
-//            player.skill1State = { true, 0, now,
-//                player.collision.x + (player.dir == 1 ? player.collision.w : -190),
-//                player.collision.y + player.collision.h - 250, player.dir };
-//            player.isSkillOnCooldown1 = true;
-//            player.lastSkillTime1 = now;
-//        }
-//        break;
-//    case 2: // L键 - 技能2
-//        if (!player.isSkillOnCooldown2) {
-//            player.skill2State = { true, 0, now,
-//                player.collision.x + (player.dir == 1 ? player.collision.w : -255),
-//                player.collision.y, player.dir };
-//            player.isSkillOnCooldown2 = true;
-//            player.lastSkillTime2 = now;
-//        }
-//        break;
-//    case 3: // I键 - 技能3
-//        if (!player.isSkillOnCooldown3) {
-//            player.skill3State = { true, 0, now,
-//                player.collision.x, player.collision.y, player.dir };
-//            player.isSkillOnCooldown3 = true;
-//            player.lastSkillTime3 = now;
-//        }
-//        break;
-//    }
-//}
-////技能动画更新函数
-//void PlayerupdateSkillAnimation() {
-//    clock_t now = clock();
-//
-//    // 更新技能1动画
-//    if (player.skill1State.active) {
-//        if (now - player.skill1State.lastFrameTime >= frameDelay) {
-//            player.skill1State.frame++;
-//            player.skill1State.lastFrameTime = now;
-//            if (player.skill1State.frame >= 8) player.skill1State.active = false;
-//        }
-//    }
-//
-//    // 更新技能2动画
-//    if (player.skill2State.active) {
-//        if (now - player.skill2State.lastFrameTime >= frameDelay) {
-//            player.skill2State.frame++;
-//            player.skill2State.lastFrameTime = now;
-//            if (player.skill2State.frame >= 16) player.skill2State.active = false;
-//        }
-//    }
-//
-//    // 更新技能3动画
-//    if (player.skill3State.active) {
-//        if (now - player.skill3State.lastFrameTime >= frameDelay) {
-//            player.skill3State.frame++;
-//            player.skill3State.lastFrameTime = now;
-//            if (player.skill3State.frame >= 12) player.skill3State.active = false;
-//        }
-//    }
-//}
-////技能冷却
-//void PlayerupdateCooldown() {
-//    clock_t now = clock();
-//
-//    if (player.isSkillOnCooldown1 && now - player.lastSkillTime1 >= player.cooldownDuration1) {
-//        player.isSkillOnCooldown1 = false;
-//    }
-//    if (player.isSkillOnCooldown2 && now - player.lastSkillTime2 >= player.cooldownDuration2) {
-//        player.isSkillOnCooldown2 = false;
-//    }
-//    if (player.isSkillOnCooldown3 && now - player.lastSkillTime3 >= player.cooldownDuration3) {
-//        player.isSkillOnCooldown3 = false;
-//    }
-//}
-////绘制技能动画
-//void PlayerDrawSkill() {
-//    // 按优先级渲染动画（技能3 > 技能2 > 技能1）
-//    if (player.skill3State.active) {
-//        drawImg(
-//            player.skill3State.x1 - 150,
-//            player.skill3State.y1 - 250,
-//            skill3 + player.skill3State.frame
-//        );
-//    }
-//
-//    if (player.skill2State.active) {
-//        if (player.skill2State.dir == 1)
-//            drawImg(
-//                player.skill2State.x1 + 40 * player.skill2State.frame,
-//                player.skill2State.y1,
-//                skill2_right + player.skill2State.frame
-//            );
-//        else
-//            drawImg(
-//                player.skill2State.x1 - 40 * player.skill2State.frame,
-//                player.skill2State.y1,
-//                skill2_left + player.skill2State.frame
-//            );
-//    }
-//
-//    if (player.skill1State.active) {
-//        if (player.skill1State.dir == 1)
-//            drawImg(
-//                player.skill1State.x1,
-//                player.skill1State.y1,
-//                skill1_right + player.skill1State.frame
-//            );
-//        else
-//            drawImg(
-//                player.skill1State.x1,
-//                player.skill1State.y1,
-//                skill1_left + player.skill1State.frame
-//            );
-//    }
-//
-//    // 显示冷却状态
-//    settextcolor(YELLOW);
-//    settextstyle(16, 0, _T("宋体"));
-//    outtextxy(10, 10, _T("技能状态:"));
-//
-//    // 技能冷却显示（修正：添加 player. 前缀）
-//    if (player.isSkillOnCooldown1) {
-//        settextcolor(RED);
-//        double remainingTime = max(0.0, (player.cooldownDuration1 - (clock() - player.lastSkillTime1)) / 1000.0);
-//        TCHAR cooldownText[50]; // 使用 TCHAR 兼容 Unicode
-//        _stprintf_s(cooldownText, _T("K: %.1f秒"), remainingTime);
-//        outtextxy(10, 30, cooldownText);
-//    }
-//    else {
-//        settextcolor(GREEN);
-//        outtextxy(10, 30, _T("K: 就绪"));
-//    }
-//
-//    if (player.isSkillOnCooldown2) {
-//        settextcolor(RED);
-//        double remainingTime = max(0.0, (player.cooldownDuration2 - (clock() - player.lastSkillTime2)) / 1000.0);
-//        TCHAR cooldownText[50];
-//        _stprintf_s(cooldownText, _T("L: %.1f秒"), remainingTime);
-//        outtextxy(10, 50, cooldownText);
-//    }
-//    else {
-//        settextcolor(GREEN);
-//        outtextxy(10, 50, _T("L: 就绪"));
-//    }
-//
-//    if (player.isSkillOnCooldown3) {
-//        settextcolor(RED);
-//        double remainingTime = max(0.0, (player.cooldownDuration3 - (clock() - player.lastSkillTime3)) / 1000.0);
-//        TCHAR cooldownText[50];
-//        _stprintf_s(cooldownText, _T("I: %.1f秒"), remainingTime);
-//        outtextxy(10, 70, cooldownText);
-//    }
-//    else {
-//        settextcolor(GREEN);
-//        outtextxy(10, 70, _T("I: 就绪"));
-//    }
-//}
-//更新player的物理状态
+void PlayerSkillAttack(int delta, vector<Novice>& Novices);
+void PlayerSkillAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& beetles);
 void PlayerPhysicsLogic() {
     player.isGround = false;
     player.vy += player.gravity;
-
+    int collisionResult;
     double lastPosY = player.collision.y;
     player.collision.y += player.vy;
-
-    int collisionResult = PlayercheckObstacleCollisionY();
+    if (RoomId == 2) {
+        collisionResult = PlayercheckObstacleCollisionY2();
+    }
+    else {
+        collisionResult = PlayercheckObstacleCollisionY1();
+    }
     if (collisionResult == 2) { // 底部碰撞
         player.collision.y = lastPosY;
         player.vy = 0;
@@ -884,35 +700,6 @@ void PlayerPhysicsLogic() {
 
     player.y = player.collision.y;
 }
-//加载技能图片
-//void loadskill_skill() {
-//    for (int i = 0; i < 8; i++) {
-//        char str[500];
-//        sprintf_s(str, "skill1_left\\1-%d.png", i);
-//        loadimage(skill1_left + i, str);
-//    }
-//    for (int i = 0; i < 8; i++) {
-//        char str[500];
-//        sprintf_s(str, "skill1_right\\1-%d.png", i);
-//        loadimage(skill1_right + i, str);
-//    }
-//    for (int i = 0; i < 16; i++) {
-//        char str[500];
-//        sprintf_s(str, "skill2_left\\2-%d.png", i);
-//        loadimage(skill2_left + i, str);
-//    }
-//    for (int i = 0; i < 16; i++) {
-//        char str[500];
-//        sprintf_s(str, "skill2_right\\2-%d.png", i);
-//        loadimage(skill2_right + i, str);
-//    }
-//    for (int i = 0; i < 12; i++) {
-//        char str[500];
-//        sprintf_s(str, "skill3\\3-%d.png", i);
-//        loadimage(skill3 + i, str);
-//    }
-//}
-//渲染player
 void PlayerrenderPlayer() {
     if (player.vx == 0) {
         if (player.isFacingLeft) {
@@ -955,7 +742,7 @@ void loadskill_skill() {
 }
  //初始化玩家状态（用户定义函数名）
 void PlayerInit() {
-    player.x = 500;
+    player.x = 1000;
     player.y = 300;
     player.collision = { 500, 300, 57, 121 };
     //player.speed = 12;
@@ -967,12 +754,79 @@ void PlayerInit() {
     player.jumpForce = 50;
     player.isGround = true;
     player.dir = 1;
-    player.maxhp = 100;
-    player.hp = 100;
+    player.maxhp = 1000;
+    player.hp = 1000;
 }
-// 碰撞检测函数（用户定义函数名和逻辑）
-// 只检测X方向碰撞
-int PlayercheckObstacleCollisionX() {
+
+//Room2检测
+int PlayercheckObstacleCollisionX2() {
+    double player_x1 = player.collision.x;
+    double player_y1 = player.collision.y;
+    double player_x2 = player_x1 + player.collision.w;
+    double player_y2 = player_y1 + player.collision.h;
+    int collisionDir = 0; // 0=无碰撞，3=左侧，4=右侧
+
+    for (const auto& platform : platforms2) {
+        double platform_x1 = platform.x;
+        double platform_y1 = platform.y;
+        double platform_x2 = platform.x + platform.w;
+        double platform_y2 = platform.y + platform.h;
+
+        // 快速排除不相交情况
+        if (player_x2 <= platform_x1 || player_x1 >= platform_x2 ||
+            player_y2 <= platform_y1 || player_y1 >= platform_y2) {
+            continue;
+        }
+
+        double overlapLeft = player_x2 - platform_x1;
+        double overlapRight = platform_x2 - player_x1;
+
+        if (overlapLeft < overlapRight) {
+            collisionDir = 3; // 左侧碰撞
+        }
+        else {
+            collisionDir = 4; // 右侧碰撞
+        }
+        break; // 只处理第一个碰撞
+    }
+    return collisionDir;
+}
+// 只检测Y方向碰撞
+int PlayercheckObstacleCollisionY2() {
+    double player_x1 = player.collision.x;
+    double player_y1 = player.collision.y;
+    double player_x2 = player_x1 + player.collision.w;
+    double player_y2 = player_y1 + player.collision.h;
+    int collisionDir = 0; // 0=无碰撞，1=顶部，2=底部
+
+    for (const auto& platform : platforms2) {
+        double platform_x1 = platform.x;
+        double platform_y1 = platform.y;
+        double platform_x2 = platform.x + platform.w;
+        double platform_y2 = platform.y + platform.h;
+
+        // 快速排除不相交情况
+        if (player_x2 <= platform_x1 || player_x1 >= platform_x2 ||
+            player_y2 <= platform_y1 || player_y1 >= platform_y2) {
+            continue;
+        }
+
+        double overlapTop = player_y2 - platform_y1;
+        double overlapBottom = platform_y2 - player_y1;
+
+        if (overlapTop < overlapBottom) {
+            collisionDir = 1; // 顶部碰撞
+            player.isGround = true;
+        }
+        else {
+            collisionDir = 2; // 底部碰撞
+        }
+        break; // 只处理第一个碰撞
+    }
+    return collisionDir;
+}
+//Room1检测
+int PlayercheckObstacleCollisionX1() {
     double player_x1 = player.collision.x;
     double player_y1 = player.collision.y;
     double player_x2 = player_x1 + player.collision.w;
@@ -1005,7 +859,7 @@ int PlayercheckObstacleCollisionX() {
     return collisionDir;
 }
 // 只检测Y方向碰撞
-int PlayercheckObstacleCollisionY() {
+int PlayercheckObstacleCollisionY1() {
     double player_x1 = player.collision.x;
     double player_y1 = player.collision.y;
     double player_x2 = player_x1 + player.collision.w;
@@ -1038,6 +892,9 @@ int PlayercheckObstacleCollisionY() {
     }
     return collisionDir;
 }
+
+
+
 // 处理水平移动（用户定义函数名）
 void Playermove() {
     double lastPosX = player.collision.x;
@@ -1045,7 +902,14 @@ void Playermove() {
     if (player.collision.x <= 0) player.collision.x = 0;
     if (player.collision.x + player.collision.w >= 1260) player.collision.x = 1260 - player.collision.w;
 
-    int collisionResult = PlayercheckObstacleCollisionX();
+    int collisionResult;
+    if(RoomId==2)
+    {
+        collisionResult = PlayercheckObstacleCollisionX2();
+    }
+    else {
+        collisionResult = PlayercheckObstacleCollisionX1();
+    }
     if (collisionResult == 3 || collisionResult == 4) {
         player.collision.x = lastPosX;
         player.vx = 0;
@@ -1092,101 +956,6 @@ void PlayeruseSkill(int skillType) {
             player.lastSkillTime3 = now;
         }
         break;
-    }
-}
-// 技能动画更新（用户定义函数名）
-void PlayerupdateSkillAnimation() {
-    clock_t now = clock();
-
-    // 技能1动画
-    if (player.skill1State.active) {
-        if (now - player.skill1State.lastFrameTime >= frameDelay) {
-            player.skill1State.frame++;
-            player.skill1State.lastFrameTime = now;
-            if (player.skill1State.frame >= 8) player.skill1State.active = false;
-        }
-    }
-
-    // 技能2动画
-    if (player.skill2State.active) {
-        if (now - player.skill2State.lastFrameTime >= frameDelay) {
-            player.skill2State.frame++;
-            player.skill2State.lastFrameTime = now;
-            if (player.skill2State.frame >= 16) player.skill2State.active = false;
-        }
-    }
-
-    // 技能3动画
-    if (player.skill3State.active) {
-        if (now - player.skill3State.lastFrameTime >= frameDelay) {
-            player.skill3State.frame++;
-            player.skill3State.lastFrameTime = now;
-            if (player.skill3State.frame >= 12) player.skill3State.active = false;
-        }
-    }
-}
-
-// 技能伤害判定
-void PlayerSkillAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& Beetles)
-{
-    if (player.skill3State.active) {
-        for (auto& enemy : enemys)
-        {
-             if (player.collision.x - 50 <= enemy.collision.x + enemy.collision.w && player.collision.x + player.collision.w + 50 >= enemy.collision.x && player.collision.y - 30 <= enemy.collision.y + enemy.collision.h && player.collision.y + player.collision.h + 30 >= enemy.collision.y) {
-                 enemy.hp -=  player.damage / 10;
-             }  
-        }
-        for (auto& Beetle : Beetles)
-        {
-             if (player.collision.x - 50 <= Beetle.collision.x + Beetle.collision.w && player.collision.x + player.collision.w + 50 >= Beetle.collision.x && player.collision.y - 30 <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h + 30 >= Beetle.collision.y) {
-                 Beetle.hp -=  player.damage / 10;
-             }
-        }
-    }
-
-    if (player.skill1State.active) {
-        for (auto& enemy : enemys)
-        {
-            if (player.dir == -1) {
-                if (player.collision.x - player.collision.w <= enemy.collision.x + enemy.collision.w && player.collision.x >= enemy.collision.x && player.collision.y <= enemy.collision.y + enemy.collision.h && player.collision.y + player.collision.h >= enemy.collision.y) {
-                    enemy.hp -= player.damage / 5;
-                }
-            }
-            else {
-                if (player.collision.x + player.collision.w <= enemy.collision.x + enemy.collision.w && player.collision.x + 2 * player.collision.w >= enemy.collision.x && player.collision.y <= enemy.collision.y + enemy.collision.h && player.collision.y + player.collision.h >= enemy.collision.y) {
-                    enemy.hp -= player.damage / 5;
-                }
-            }
-        }
-        for (auto& Beetle : Beetles)
-        {
-            if (player.dir == -1) {
-                if (player.collision.x - player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
-                    Beetle.hp -= player.damage / 5;
-                }
-            }
-            else {
-                if (player.collision.x + player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x + 2 * player.collision.w >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
-                    Beetle.hp -= player.damage / 5;
-                }
-            }
-        }
-    }
-
-   
-}
-
-// 冷却更新（用户定义函数名）
-void PlayerupdateCooldown() {
-    clock_t now = clock();
-    if (player.isSkillOnCooldown1 && now - player.lastSkillTime1 >= player.cooldownDuration1) {
-        player.isSkillOnCooldown1 = false;
-    }
-    if (player.isSkillOnCooldown2 && now - player.lastSkillTime2 >= player.cooldownDuration2) {
-        player.isSkillOnCooldown2 = false;
-    }
-    if (player.isSkillOnCooldown3 && now - player.lastSkillTime3 >= player.cooldownDuration3) {
-        player.isSkillOnCooldown3 = false;
     }
 }
 // 绘制技能动画（用户定义函数名）
@@ -1287,35 +1056,54 @@ void PlayerGetMsg() {
         }
     }
 }
-void PlayerAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& Beetles) {
-    
-    
+void PlayerAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& Beetles,vector<Novice>& Novices) {
 
     if (player.isAttack && player.timer >= player.interval) {
-        
-        for (auto& enemy : enemys)
+        if (enemys.size() > 0)
         {
-            if (player.dir == -1) {
-                if (player.collision.x - player.collision.w <= enemy.collision.x + enemy.collision.w && player.collision.x >= enemy.collision.x && player.collision.y <= enemy.collision.y + enemy.collision.h && player.collision.y + player.collision.h >= enemy.collision.y) {
-                    enemy.hp -= player.damage;
+            for (auto& enemy : enemys)
+            {
+                if (player.dir == -1) {
+                    if (player.collision.x - player.collision.w <= enemy.collision.x + enemy.collision.w && player.collision.x >= enemy.collision.x && player.collision.y <= enemy.collision.y + enemy.collision.h && player.collision.y + player.collision.h >= enemy.collision.y) {
+                        enemy.hp -= player.damage;
+                    }
                 }
-            }
-            else {
-                if (player.collision.x + player.collision.w <= enemy.collision.x + enemy.collision.w && player.collision.x + 2 * player.collision.w >= enemy.collision.x && player.collision.y <= enemy.collision.y + enemy.collision.h && player.collision.y + player.collision.h >= enemy.collision.y) {
-                    enemy.hp -= player.damage;
+                else {
+                    if (player.collision.x + player.collision.w <= enemy.collision.x + enemy.collision.w && player.collision.x + 2 * player.collision.w >= enemy.collision.x && player.collision.y <= enemy.collision.y + enemy.collision.h && player.collision.y + player.collision.h >= enemy.collision.y) {
+                        enemy.hp -= player.damage;
+                    }
                 }
             }
         }
-        for (auto& Beetle : Beetles)
+        if (Beetles.size() > 0)
         {
-            if (player.dir == -1) {
-                if (player.collision.x - player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
-                    Beetle.hp -= player.damage;
+            for (auto& Beetle : Beetles)
+            {
+                if (player.dir == -1) {
+                    if (player.collision.x - player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
+                        Beetle.hp -= player.damage;
+                    }
+                }
+                else {
+                    if (player.collision.x + player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x + 2 * player.collision.w >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
+                        Beetle.hp -= player.damage;
+                    }
                 }
             }
-            else {
-                if (player.collision.x + player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x + 2 * player.collision.w >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
-                    Beetle.hp -= player.damage;
+        }
+        if (Novices.size() > 0)
+        {
+            for (auto& Beetle : Novices)
+            {
+                if (player.dir == -1) {
+                    if (player.collision.x - player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
+                        Beetle.hp -= player.damage;
+                    }
+                }
+                else {
+                    if (player.collision.x + player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x + 2 * player.collision.w >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
+                        Beetle.hp -= player.damage;
+                    }
                 }
             }
         }
@@ -1324,10 +1112,402 @@ void PlayerAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& Beetles) 
     player.timer += delta;
 
 }
+void PlayerAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& Beetles) {
+    if (player.isAttack && player.timer >= player.interval) {
+        if (enemys.size() > 0)
+        {
+            for (auto& enemy : enemys)
+            {
+                if (player.dir == -1) {
+                    if (player.collision.x - player.collision.w <= enemy.collision.x + enemy.collision.w && player.collision.x >= enemy.collision.x && player.collision.y <= enemy.collision.y + enemy.collision.h && player.collision.y + player.collision.h >= enemy.collision.y) {
+                        enemy.hp -= player.damage;
+                    }
+                }
+                else {
+                    if (player.collision.x + player.collision.w <= enemy.collision.x + enemy.collision.w && player.collision.x + 2 * player.collision.w >= enemy.collision.x && player.collision.y <= enemy.collision.y + enemy.collision.h && player.collision.y + player.collision.h >= enemy.collision.y) {
+                        enemy.hp -= player.damage;
+                    }
+                }
+            }
+        }
+        if (Beetles.size() > 0)
+        {
+            for (auto& Beetle : Beetles)
+            {
+                if (player.dir == -1) {
+                    if (player.collision.x - player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
+                        Beetle.hp -= player.damage;
+                    }
+                }
+                else {
+                    if (player.collision.x + player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x + 2 * player.collision.w >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
+                        Beetle.hp -= player.damage;
+                    }
+                }
+            }
+        }
+        player.timer = 0;
+    }
+    player.timer += delta;
+}
+void PlayerAttack(int delta, vector<Novice>& Novices) {
+    if (player.isAttack && player.timer >= player.interval) {
+        if (Novices.size() > 0)
+        {
+            for (auto& Beetle : Novices)
+            {
+                if (player.dir == -1) {
+                    if (player.collision.x - player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
+                        Beetle.hp -= player.damage;
+                    }
+                }
+                else {
+                    if (player.collision.x + player.collision.w <= Beetle.collision.x + Beetle.collision.w && player.collision.x + 2 * player.collision.w >= Beetle.collision.x && player.collision.y <= Beetle.collision.y + Beetle.collision.h && player.collision.y + player.collision.h >= Beetle.collision.y) {
+                        Beetle.hp -= player.damage;
+                    }
+                }
+            }
+        }
+        player.timer = 0;
+    }
+    player.timer += delta;
+}
+// 碰撞检测函数：判断两个矩形是否重叠
+bool isOverlapping(int x1, int y1, int w1, int h1, int x2, int y2, int w2, int h2) {
+    return (x1 < x2 + w2 && x1 + w1 > x2 &&
+        y1 < y2 + h2 && y1 + h1 > y2);
+}
 
+// 技能动画更新（用户定义函数名）
+void PlayerupdateSkillAnimation() {
+    clock_t now = clock();
+
+    // 技能1动画
+    if (player.skill1State.active) {
+        if (now - player.skill1State.lastFrameTime >= 50) {
+            player.skill1State.frame++;
+            player.skill1State.lastFrameTime = now;
+            if (player.skill1State.frame >= 4) player.skill1State.active = false;
+        }
+    }
+
+    // 技能2动画
+    if (player.skill2State.active) {
+        if (now - player.skill2State.lastFrameTime >= frameDelay) {
+            player.skill2State.frame++;
+            player.skill2State.lastFrameTime = now;
+            if (player.skill2State.frame >= 16) player.skill2State.active = false;
+        }
+    }
+
+    // 技能3动画
+    if (player.skill3State.active) {
+        if (now - player.skill3State.lastFrameTime >= 50) {
+            player.skill3State.frame++;
+            player.skill3State.lastFrameTime = now;
+            if (player.skill3State.frame >= 12) player.skill3State.active = false;
+        }
+    }
+}
+// 技能伤害判定
+void PlayerSkillAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& beetles,vector<Novice>& Novices)
+{
+    // 三技能在释放的第5帧进行伤害判定
+    if (player.skill3State.active && player.skill3State.frame == 5) {
+        int x1 = player.skill3State.x1 - 150;
+        int y1 = player.skill3State.y1 - 250;
+        int w = 290;
+        int h = 270;
+        int x2 = x1 + w;
+        int y2 = y1 + h; // 修正：原为 y2 = x2 + h
+
+        // 对蚊子敌人造成伤害
+        if(enemys.size() > 0)
+        {
+            for (auto& enemy : enemys) {
+                if (isOverlapping(x1, y1, w, h,
+                    enemy.collision.x, enemy.collision.y,
+                    enemy.collision.w, enemy.collision.h)) {
+                    enemy.hp -= 250;
+                }
+            }
+        }
+
+        // 对甲虫敌人造成伤害
+        if (beetles.size() > 0)
+        {
+            for (auto& beetle : beetles) {
+                if (isOverlapping(x1, y1, w, h,
+                    beetle.collision.x, beetle.collision.y,
+                    beetle.collision.w, beetle.collision.h)) {
+                    beetle.hp -= 250;
+                }
+            }
+        }
+
+        if (Novices.size() > 0)
+        {
+            for (auto& beetle : Novices) {
+                if (isOverlapping(x1, y1, w, h,
+                    beetle.collision.x, beetle.collision.y,
+                    beetle.collision.w, beetle.collision.h)) {
+                    beetle.hp -= 250;
+                }
+            }
+        }
+    }
+
+    // 2技能在释放的每一帧都进行伤害判定
+    if (player.skill2State.active) {
+        // 根据方向和释放帧数计算技能范围
+        int x1 = player.skill2State.x1 + 40 * player.skill2State.frame * player.skill2State.dir;
+        int y1 = player.skill2State.y1;
+        int w = 255;
+        int h = 90;
+        int x2 = x1 + w;
+        int y2 = y1 + h;
+
+        // 对蚊子敌人造成伤害
+        for (auto& enemy : enemys) {
+            if (isOverlapping(x1, y1, w, h,
+                enemy.collision.x, enemy.collision.y,
+                enemy.collision.w, enemy.collision.h)) {
+                enemy.hp -= player.damage / 8; // 假设伤害为1/8
+            }
+        }
+
+        // 对甲虫敌人造成伤害
+        for (auto& beetle : beetles) {
+            if (isOverlapping(x1, y1, w, h,
+                beetle.collision.x, beetle.collision.y,
+                beetle.collision.w, beetle.collision.h)) {
+                beetle.hp -= player.damage / 8; // 假设伤害为1/8
+            }
+        }
+
+        for (auto& beetle : Novices) {
+            if (isOverlapping(x1, y1, w, h,
+                beetle.collision.x, beetle.collision.y,
+                beetle.collision.w, beetle.collision.h)) {
+                beetle.hp -= player.damage/8;
+            }
+        }
+    }
+
+    // 一技能在释放的第3帧进行伤害判定
+    if (player.skill1State.active && player.skill1State.frame == 2) {
+        int x1 = player.skill1State.x1;
+        int y1 = player.skill1State.y1;
+        int w = 190;
+        int h = 250;
+        int x2 = x1 + w;
+        int y2 = y1 + h; // 修正：原为技能2的frame检查
+
+        // 对蚊子敌人造成伤害
+        for (auto& enemy : enemys) {
+            if (isOverlapping(x1, y1, w, h,
+                enemy.collision.x, enemy.collision.y,
+                enemy.collision.w, enemy.collision.h)) {
+                enemy.hp -= 500;
+            }
+        }
+
+        // 对甲虫敌人造成伤害
+        for (auto& beetle : beetles) {
+            if (isOverlapping(x1, y1, w, h,
+                beetle.collision.x, beetle.collision.y,
+                beetle.collision.w, beetle.collision.h)) {
+                beetle.hp -= 500;
+            }
+        }
+
+        for (auto& beetle : Novices) {
+            if (isOverlapping(x1, y1, w, h,
+                beetle.collision.x, beetle.collision.y,
+                beetle.collision.w, beetle.collision.h)) {
+                beetle.hp -= 500;
+            }
+        }
+    }
+}
+void PlayerSkillAttack(int delta, vector<Mosquito>& enemys, vector<Beetle>& beetles)
+{
+    // 三技能在释放的第5帧进行伤害判定
+    if (player.skill3State.active && player.skill3State.frame == 5) {
+        int x1 = player.skill3State.x1 - 150;
+        int y1 = player.skill3State.y1 - 250;
+        int w = 290;
+        int h = 270;
+        int x2 = x1 + w;
+        int y2 = y1 + h; // 修正：原为 y2 = x2 + h
+
+        // 对蚊子敌人造成伤害
+        if (enemys.size() > 0)
+        {
+            for (auto& enemy : enemys) {
+                if (isOverlapping(x1, y1, w, h,
+                    enemy.collision.x, enemy.collision.y,
+                    enemy.collision.w, enemy.collision.h)) {
+                    enemy.hp -= 250;
+                }
+            }
+        }
+
+        // 对甲虫敌人造成伤害
+        if (beetles.size() > 0)
+        {
+            for (auto& beetle : beetles) {
+                if (isOverlapping(x1, y1, w, h,
+                    beetle.collision.x, beetle.collision.y,
+                    beetle.collision.w, beetle.collision.h)) {
+                    beetle.hp -= 250;
+                }
+            }
+        }
+    }
+
+    // 2技能在释放的每一帧都进行伤害判定
+    if (player.skill2State.active) {
+        // 根据方向和释放帧数计算技能范围
+        int x1 = player.skill2State.x1 + 40 * player.skill2State.frame * player.skill2State.dir;
+        int y1 = player.skill2State.y1;
+        int w = 255;
+        int h = 90;
+        int x2 = x1 + w;
+        int y2 = y1 + h;
+
+        // 对蚊子敌人造成伤害
+        for (auto& enemy : enemys) {
+            if (isOverlapping(x1, y1, w, h,
+                enemy.collision.x, enemy.collision.y,
+                enemy.collision.w, enemy.collision.h)) {
+                enemy.hp -= player.damage / 8; // 假设伤害为1/8
+            }
+        }
+
+        // 对甲虫敌人造成伤害
+        for (auto& beetle : beetles) {
+            if (isOverlapping(x1, y1, w, h,
+                beetle.collision.x, beetle.collision.y,
+                beetle.collision.w, beetle.collision.h)) {
+                beetle.hp -= player.damage / 8; // 假设伤害为1/8
+            }
+        }
+
+        for (auto& beetle : Novices) {
+            if (isOverlapping(x1, y1, w, h,
+                beetle.collision.x, beetle.collision.y,
+                beetle.collision.w, beetle.collision.h)) {
+                beetle.hp -= player.damage / 8;
+            }
+        }
+    }
+
+    // 一技能在释放的第3帧进行伤害判定
+    if (player.skill1State.active && player.skill1State.frame == 2) {
+        int x1 = player.skill1State.x1;
+        int y1 = player.skill1State.y1;
+        int w = 190;
+        int h = 250;
+        int x2 = x1 + w;
+        int y2 = y1 + h; // 修正：原为技能2的frame检查
+
+        // 对蚊子敌人造成伤害
+        for (auto& enemy : enemys) {
+            if (isOverlapping(x1, y1, w, h,
+                enemy.collision.x, enemy.collision.y,
+                enemy.collision.w, enemy.collision.h)) {
+                enemy.hp -= 500;
+            }
+        }
+
+        // 对甲虫敌人造成伤害
+        for (auto& beetle : beetles) {
+            if (isOverlapping(x1, y1, w, h,
+                beetle.collision.x, beetle.collision.y,
+                beetle.collision.w, beetle.collision.h)) {
+                beetle.hp -= 500;
+            }
+        }
+
+    }
+}
+void PlayerSkillAttack(int delta, vector<Novice>& Novices)
+{
+    // 三技能在释放的第5帧进行伤害判定
+    if (player.skill3State.active && player.skill3State.frame == 5) {
+        int x1 = player.skill3State.x1 - 150;
+        int y1 = player.skill3State.y1 - 250;
+        int w = 290;
+        int h = 270;
+        int x2 = x1 + w;
+        int y2 = y1 + h; // 修正：原为 y2 = x2 + h
+
+
+        if (Novices.size() > 0)
+        {
+            for (auto& beetle : Novices) {
+                if (isOverlapping(x1, y1, w, h,
+                    beetle.collision.x, beetle.collision.y,
+                    beetle.collision.w, beetle.collision.h)) {
+                    beetle.hp -= 250;
+                }
+            }
+        }
+    }
+
+    // 2技能在释放的每一帧都进行伤害判定
+    if (player.skill2State.active) {
+        // 根据方向和释放帧数计算技能范围
+        int x1 = player.skill2State.x1 + 40 * player.skill2State.frame * player.skill2State.dir;
+        int y1 = player.skill2State.y1;
+        int w = 255;
+        int h = 90;
+        int x2 = x1 + w;
+        int y2 = y1 + h;
+
+        for (auto& beetle : Novices) {
+            if (isOverlapping(x1, y1, w, h,
+                beetle.collision.x, beetle.collision.y,
+                beetle.collision.w, beetle.collision.h)) {
+                beetle.hp -= player.damage / 8;
+            }
+        }
+    }
+
+    // 一技能在释放的第3帧进行伤害判定
+    if (player.skill1State.active && player.skill1State.frame == 2) {
+        int x1 = player.skill1State.x1;
+        int y1 = player.skill1State.y1;
+        int w = 190;
+        int h = 250;
+        int x2 = x1 + w;
+        int y2 = y1 + h; // 修正：原为技能2的frame检查
+
+        for (auto& beetle : Novices) {
+            if (isOverlapping(x1, y1, w, h,
+                beetle.collision.x, beetle.collision.y,
+                beetle.collision.w, beetle.collision.h)) {
+                beetle.hp -= 500;
+            }
+        }
+    }
+}
+// 冷却更新（用户定义函数名）
+void PlayerupdateCooldown() {
+    clock_t now = clock();
+    if (player.isSkillOnCooldown1 && now - player.lastSkillTime1 >= player.cooldownDuration1) {
+        player.isSkillOnCooldown1 = false;
+    }
+    if (player.isSkillOnCooldown2 && now - player.lastSkillTime2 >= player.cooldownDuration2) {
+        player.isSkillOnCooldown2 = false;
+    }
+    if (player.isSkillOnCooldown3 && now - player.lastSkillTime3 >= player.cooldownDuration3) {
+        player.isSkillOnCooldown3 = false;
+    }
+}
 
 void PlayerRenderer() {
-    BeginBatchDraw();
 
     anim_player_move_left.on_update(60);
     anim_player_move_right.on_update(60);
@@ -1369,8 +1549,6 @@ void PlayerRenderer() {
         }
     }
    
-
-    EndBatchDraw();
 }
 void PlayerUpdate() {
     PlayerGetMsg();
@@ -1380,10 +1558,20 @@ void PlayerUpdate() {
     PlayerupdateSkillAnimation();
     PlayerupdateCooldown();
     PlayerDrawSkill();
-    PlayerAttack(60, Mosquitos, Beetles);
-    PlayerSkillAttack(60, Mosquitos, Beetles);
+    if(RoomId==2)
+    {
+        PlayerAttack(60, Mosquitos2, Beetles2);
+        PlayerSkillAttack(60, Mosquitos2, Beetles2);
+    }
+    else if(RoomId==1){
+        PlayerAttack(60, Mosquitos, Beetles);
+        PlayerSkillAttack(60, Mosquitos, Beetles);
+    }
+    else if (RoomId == 3) {
+        PlayerAttack(60, Novices3);
+        PlayerSkillAttack(60, Novices3);
+    }
     ShowHp();
-    FlushBatchDraw();
 }
 void ShowHp()
 {
@@ -1396,10 +1584,421 @@ void ShowHp()
 
 //------------------------------------------------------------敌人相关------------------------------------------------------------------------------------
 
-
 double Distance(double x1, double y1, double x2, double y2)
 {
     return sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2));
+}
+
+
+void NoviceInit(Novice& self, double stax, double ground);
+void NoviceBehaviour(Novice& self, const vector<Collision>& obstacles);
+vector<double> NoviceCheckPlayer(Novice& self);
+void NoviceDrawImage(Novice& self);
+void NoviceDash(Novice& self, const vector<Collision>& obstacles);
+bool NoviceCollisionChecker(Novice& self, const vector<Collision>& obstacles);
+bool NoviceAttackCheck(Novice& self, double distance);
+void NoviceAttack(Novice& self);
+void NoviceDeath(Novice& self);
+void NoviceShowHp(Novice& self);
+void NoviceAttackWait(Novice& self);
+void NoviceDrawDash(Novice& self);
+void NoviceFollowing(Novice& self, const vector<Collision>& obstacles);
+
+void NoviceInit(Novice& self, double stax, double ground)
+{
+    //血量、攻击力、碰撞体、速度、视野、攻击范围、巡视区域、朝右、（能攻击、跟随玩家、开始死亡、已死亡  全false）、图像数组下标
+    self.hp = 3000;
+    self.atk = 30;
+    self.collision = { stax,ground - 352,192,352 };
+    self.collisionTmp = { stax,ground - 137,210,137 };
+    self.speed = 6;
+    self.view = 300;
+    self.atkRange = 200;
+    //self.atkW = 70;
+    //self.atkH = 120;
+    self.right = true;
+    self.canAtk = self.attacking = self.dash = self.deathEnd = false;
+    self.deathInd = 0;
+    self.idleInd = 0;
+    self.atkInd = 0;
+    //攻击时间
+    self.readyTime = 500;
+    self.readysta = 0;
+    self.atkLast = clock();
+    self.atkTime = 1000;
+    self.maxHp = self.hp;
+    self.frame = 0;
+    self.frameMax = 3;
+
+    //左右行走，左右死亡,左右攻击
+    self.idleLeft.resize(10);
+    self.idleRight.resize(10);
+    self.dieLeft.resize(3);
+    self.dieRight.resize(3);
+    self.atkLeft.resize(8);
+    self.atkRight.resize(8);
+    self.dashLeft.resize(12);
+    self.dashRight.resize(12);
+    char name[100] = "";
+    for (int i = 0; i < 10; i++)
+    {
+        sprintf_s(name, "assets/enemy2/Idle/left-%d.png", i);
+        loadimage(&self.idleLeft[i], name);
+        sprintf_s(name, "assets/enemy2/Idle/right-%d.png", i);
+        loadimage(&self.idleRight[i], name);
+    }
+    for (int i = 0; i < 3; i++)
+    {
+        sprintf_s(name, "assets/enemy2/death/left-%d.png", i);
+        loadimage(&self.dieLeft[i], name);
+        sprintf_s(name, "assets/enemy2/death/right-%d.png", i);
+        loadimage(&self.dieRight[i], name);
+    }
+    for (int i = 0; i < 8; i++)
+    {
+        sprintf_s(name, "assets/enemy2/attack/left-%d.png", i);
+        loadimage(&self.atkLeft[i], name);
+        sprintf_s(name, "assets/enemy2/attack/right-%d.png", i);
+        loadimage(&self.atkRight[i], name);
+    }
+    for (int i = 0; i < 12; i++)
+    {
+        sprintf_s(name, "assets/enemy2/run/left-%d.png", i);
+        loadimage(&self.dashLeft[i], name);
+        sprintf_s(name, "assets/enemy2/run/right-%d.png", i);
+        loadimage(&self.dashRight[i], name);
+    }
+    self.idleIndMax = 10;
+    self.dieIndMax = 3;
+    self.atkIndMax = 8;
+    self.dashIndMax = 12;
+}
+void NoviceBehaviour(Novice& self, const vector<Collision>& obstacles)
+{
+    rectangle(self.collision.x, self.collision.y, self.collision.x + self.collision.w, self.collision.y + self.collision.h);
+    //死亡相关
+    //彻底死亡
+    if (self.deathEnd)return;
+    //播放死亡动画
+    if (self.hp <= 0)
+    {
+        NoviceDeath(self);
+        return;
+    }
+
+    NoviceShowHp(self);//展示血条
+    if (!self.dash)
+    {
+        self.tag = NoviceCheckPlayer(self);
+    }
+    else NoviceCheckPlayer(self);
+    NoviceAttackCheck(self, self.tag[2]);//攻击状态
+    if (self.dash)
+    {
+        printf("冲刺\n");
+        NoviceDash(self, obstacles);
+    }
+    else if (self.readydash)
+    {
+        printf("准备冲刺\n");
+        NoviceAttackWait(self);
+    }
+    else if (self.attacking)//攻击状态
+    {
+        printf("攻击\n");
+        NoviceAttack(self);
+    }
+    else if (self.canAtk)
+    {
+        printf("准备攻击\n");
+        NoviceAttackWait(self);
+
+    }
+    else
+    {
+        printf("追击\n");
+        NoviceFollowing(self, obstacles);
+    }
+}
+vector<double> NoviceCheckPlayer(Novice& self)
+{
+
+    //返回角色矩形左右中点与怪物矩形左右中点中距离最近的点及距离
+    vector<double> re;
+    re.push_back(player.collision.x + player.collision.w / 2);
+    re.push_back(player.collision.y + player.collision.h / 2);
+    double d = Distance(re[0], re[1], self.collision.x + self.collision.w / 2, self.collision.y + self.collision.h / 2);
+    re.push_back(d);
+    //double tmpx= self.collision.x + self.collision.w / 2, tmpy= self.collision.y + self.collision.h / 2;
+    Collision tmp1 = { 0.0, self.collision.y, self.collision.x + self.collision.w - self.view, self.collision.y + self.collision.h };
+    Collision tmp2 = { self.collision.x + self.view, self.collision.y, 1280, self.collision.y + self.collision.h };
+    //rectangle(tmp1.x, tmp1.y, tmp1.x + tmp1.w, tmp1.y + tmp1.h);
+    //rectangle(tmp2.x, tmp2.y, tmp2.x + tmp2.w, tmp2.y + tmp2.h);
+    if (re[0] >= tmp1.x && re[0] <= tmp1.x + tmp1.w && re[1] >= tmp1.y && re[1] <= tmp1.y + tmp1.h)
+    {
+        if (!self.readydash)
+        {
+            self.readydash = true;
+            self.readysta = clock();
+        }
+        else
+        {
+            if (clock() - self.readysta >= self.readyTime)
+            {
+                self.right = false;
+                self.dash = true;
+                self.readydash = false;
+            }
+        }
+    }
+    else if (re[0] >= tmp2.x && re[0] <= tmp2.x + tmp2.w && re[1] >= tmp2.y && re[1] <= tmp2.y + tmp2.h)
+    {
+        if (!self.readydash)
+        {
+            self.readydash = true;
+            self.readysta = clock();
+        }
+        else
+        {
+            if (clock() - self.readysta >= self.readyTime)
+            {
+                self.right = true;
+                self.dash = true;
+                self.readydash = false;
+            }
+        }
+    }
+    else
+    {
+        self.readydash = false;
+    }
+    return re;
+}
+void NoviceDrawImage(Novice& self)
+{
+    if (self.right)drawImg(self.collision.x - 17, self.collision.y - 41, &self.idleRight[self.idleInd++]);
+    else drawImg(self.collision.x - 17, self.collision.y - 41, &self.idleLeft[self.idleInd++]);
+    if (self.idleInd == self.idleIndMax)self.idleInd = 0;
+}
+void NoviceDash(Novice& self, const vector<Collision>& obstacles)
+{
+    int oldX = self.collision.x;
+    int op = (self.right) ? 1 : -1;
+    self.collision.x += self.speed * op;
+    if (NoviceCollisionChecker(self, obstacles))self.collision.x = oldX;//检查x碰撞并回退
+
+    int oldY = self.collision.y;
+    self.collision.y += (self.collision.y + self.collision.h < player.collision.y + player.collision.h) ? self.speed : -self.speed;
+    if (NoviceCollisionChecker(self, obstacles))self.collision.y = oldY;
+    NoviceDrawDash(self);
+}
+bool NoviceCollisionChecker(Novice& self, const vector<Collision>& obstacles) {//碰撞检测
+    for (const auto& ob : obstacles)
+    {
+        if (self.collision.x >= ob.x + ob.w || self.collision.x + self.collision.w <= ob.x
+            || self.collision.y >= ob.y + ob.h || self.collision.y + self.collision.h <= ob.y)continue;
+        return true;
+    }
+    return false;
+}
+bool NoviceAttackCheck(Novice& self, double distance)
+{
+    if (distance <= self.atkRange)
+    {
+        self.canAtk = true;
+        if (self.tag[0] <= self.collision.x + self.collision.w / 2)self.right = false;
+        else self.right = true;
+        if (clock() - self.atkLast >= self.atkTime)
+        {
+            self.attacking = true;
+            /*self.atkLast = clock();*/
+        }
+    }
+    else self.canAtk = false;
+    return self.attacking;
+}
+void NoviceAttack(Novice& self)
+{
+    if (self.atkInd == self.atkIndMax)//结束帧特判----伤害判定和后摇
+    {
+        //确保每一帧都有怪物贴图
+        drawImg(self.collision.x - 111, self.collision.y - 45, self.right ? &self.atkRight[self.atkInd - 1] : &self.atkLeft[self.atkInd - 1]);
+        if (self.frame == self.frameMax)
+        {
+            self.atkLast = clock();
+            self.atkInd = 0;
+            self.frame = 0;
+            self.attacking = false;
+            double x1, x2, y1, y2;//伤害区域
+            if (self.right)
+            {
+                x1 = self.collision.x + self.collision.w - 70;
+                y1 = self.collision.y + 170;
+                x2 = x1 + 200;
+                y2 = y1 + 200;
+            }
+            else
+            {
+                x1 = self.collision.x - 130;
+                y1 = self.collision.y + 170;
+                x2 = self.collision.x + 50;
+                y2 = y1 + 200;
+            }
+            //rectangle(x1, y1, x2, y2);
+
+            //检测是否攻击到
+            if (player.collision.x > x2 || player.collision.x + player.collision.w<x1
+                || player.collision.y>y2 || player.collision.y + player.collision.h < y1) {
+            }
+            else //攻击到
+            {
+                player.hp -= self.atk;//伤害判定
+            }
+        }
+        else
+        {
+            self.frame += 1;
+        }
+
+    }
+    else
+    {
+        drawImg(self.collision.x - 111, self.collision.y - 45, self.right ? &self.atkRight[self.atkInd] : &self.atkLeft[self.atkInd]);
+        if (self.frame == self.frameMax)
+        {
+            self.atkInd += 1;
+            self.frame = 0;
+        }
+        else self.frame += 1;
+    }
+}
+void NoviceDeath(Novice& self) {
+
+    if (self.deathInd == self.dieIndMax)
+    {
+        drawImg(self.collision.x - 40, self.collision.y - 90, self.right ? &self.dieRight[self.deathInd - 1] : &self.dieLeft[self.deathInd - 1]);
+        if (self.frame == self.frameMax)
+        {
+            self.frame = 0;
+            self.deathEnd = true;
+            self.deathInd = 0;
+            if (RoomId == 2)
+            {
+                EnemyCounter2 -= 1;
+            }
+            else {
+                EnemyCounter1 -= 1;
+            }
+        }
+        else self.frame += 1;
+    }
+    else
+    {
+        drawImg(self.collision.x - 40, self.collision.y - 90, self.right ? &self.dieRight[self.deathInd] : &self.dieLeft[self.deathInd]);
+        if (self.frame == self.frameMax)
+        {
+            self.frame = 0;
+            self.deathInd += 1;
+        }
+        else self.frame += 1;
+    }
+}
+void NoviceShowHp(Novice& self)
+{
+    double rate = self.hp * 1.0 / self.maxHp;
+    setfillcolor(RED);
+    rectangle(self.collision.x, self.collision.y - 10, self.collision.x + self.collision.w, self.collision.y);
+    fillrectangle(self.collision.x, self.collision.y - 10, self.collision.x + self.collision.w * rate, self.collision.y);
+}
+void NoviceAttackWait(Novice& self)
+{
+    NoviceDrawImage(self);
+}
+void NoviceDrawDash(Novice& self)
+{
+    if (self.dashInd == self.dashIndMax)//结束帧特判----伤害判定和后摇
+    {
+        //确保每一帧都有怪物贴图
+        drawImg(self.collision.x - 20, self.collision.y - 60, self.right ? &self.dashRight[self.dashInd - 1] : &self.dashLeft[self.dashInd - 1]);
+        if (self.frame == self.frameMax)
+        {
+            self.dashInd = 0;
+            self.frame = 0;
+            self.dash = false;
+
+            // ---------------------------------------------修改伤害判定----------------------------------------------------
+            double x1, x2, y1, y2;//伤害区域
+            if (self.right)
+            {
+                x1 = self.collision.x + self.collision.w;
+                y1 = self.collision.y;
+                x2 = 1280;
+                y2 = y1 + self.collision.h;
+            }
+            else
+            {
+                x1 = 0;
+                y1 = self.collision.y;
+                x2 = self.collision.x;
+                y2 = y1 + self.collision.h;
+            }
+            //rectangle(x1, y1, x2, y2);
+
+            //检测是否攻击到
+            if (player.collision.x > x2 || player.collision.x + player.collision.w<x1
+                || player.collision.y>y2 || player.collision.y + player.collision.h < y1) {
+            }
+            else //攻击到
+            {
+                player.hp -= self.atk / 2;//伤害判定
+            }
+        }
+        else
+        {
+            self.frame += 1;
+        }
+
+    }
+    else
+    {
+        self.collisionTmp.x = self.collision.x + self.collision.w - self.collisionTmp.w;
+        self.collisionTmp.y = self.collision.y + self.collision.h - self.collisionTmp.h;
+        if (self.dashInd >= 5 && self.dashInd <= 9)drawImg(self.collisionTmp.x - 43, self.collisionTmp.y - 64, self.right ? &self.dashRight[self.dashInd] : &self.dashLeft[self.dashInd]);
+        else drawImg(self.collision.x - 20, self.collision.y - 60, self.right ? &self.dashRight[self.dashInd] : &self.dashLeft[self.dashInd]);
+        if (self.frame == self.frameMax)
+        {
+
+            if (self.dashInd >= 5 && self.dashInd <= 9 && !(player.collision.x > self.collisionTmp.x + self.collisionTmp.w
+                || player.collision.x + player.collision.w < self.collisionTmp.x
+                || player.collision.y>self.collisionTmp.y + self.collisionTmp.h || player.collision.y + player.collision.h < self.collisionTmp.y))
+            {
+                rectangle(self.collisionTmp.x, self.collisionTmp.y, self.collisionTmp.x + self.collisionTmp.w, self.collisionTmp.y + self.collisionTmp.h);
+                player.hp -= self.atk / 2;
+            }
+            else if ((self.atkInd < 5 || self.atkInd>9) && !(player.collision.x > self.collision.x + self.collision.w
+                || player.collision.x + player.collision.w < self.collision.x
+                || player.collision.y>self.collision.y + self.collision.h || player.collision.y + player.collision.h < self.collision.y))
+            {
+                rectangle(self.collision.x, self.collision.y, self.collision.x + self.collision.w, self.collision.y + self.collision.h);
+                player.hp -= self.atk / 2;
+            }
+
+
+            self.dashInd += 1;
+            self.frame = 0;
+        }
+        else self.frame += 1;
+    }
+}
+void NoviceFollowing(Novice& self, const vector<Collision>& obstacles)
+{
+    int oldX = self.collision.x;
+    self.collision.x += (self.collision.x + self.collision.w / 2 < player.collision.x + player.collision.w / 2) ? self.speed : -self.speed;
+    if (NoviceCollisionChecker(self, obstacles))self.collision.x = oldX;
+    int oldY = self.collision.y;
+    self.collision.y += (self.collision.y + self.collision.h < player.collision.y + player.collision.h) ? self.speed : -self.speed;
+    if (NoviceCollisionChecker(self, obstacles))self.collision.y = oldY;
+    NoviceDrawImage(self);
 }
 
 void MosquitoInit(Mosquito& self, double stax, double ground);
@@ -1672,6 +2271,13 @@ void MosquitoDeath(Mosquito& self) {
             self.frame = 0;
             self.deathEnd = true;
             self.deathInd = 0;
+            if(RoomId==2)
+            {
+                EnemyCounter2 -= 1;
+            }
+            else {
+                EnemyCounter1 -= 1;
+            }
         }
         else self.frame += 1;
     }
@@ -1725,7 +2331,7 @@ void BeetleInit(Beetle& self, double stax, double ground, double idleX1, double 
     self.speed = 6;
     /*self.view = 200;
     self.atkRange = 100;*/
-    self.view = 60;
+    self.view = 200;
     self.atkRange = 50;
     self.idleX1 = idleX1;
     self.idleX2 = idleX2;
@@ -1963,6 +2569,13 @@ void BeetleDeath(Beetle& self) {
             self.frame = 0;
             self.deathEnd = true;
             self.deathInd = 0;
+            if(RoomId==2)
+            {
+                EnemyCounter2 -= 1;
+            }
+            else {
+                EnemyCounter1 -= 1;
+            }
         }
         else self.frame += 1;
     }
@@ -1989,6 +2602,49 @@ void BeetleAttackWait(Beetle& self)
     BeetleDrawIdle(self);
 }
 
+//----------------------------------------------------------------陷阱相关------------------------------------------------------------------------------------------------------
+bool TrapCollisionCheckerPlayer(Trap& trap, Player& player)
+{
+    return (player.collision.x + player.collision.w >= trap.x && player.collision.x <= trap.x + trap.w && player.collision.y <= trap.y + trap.h && player.collision.y + player.collision.h >= trap.y);
+}
+void TrapDamagePlayer(Trap& trap, Player& player, int delta)
+{
+    if (TrapCollisionCheckerPlayer(trap, player))
+    {
+        if (trap.timer_player >= trap.interval)
+        {
+            player.hp -= trap.damage;
+            trap.timer_player = 0;
+        }
+        trap.timer_player += delta;	//每次调用时加上一帧的时间
+    }
+    else
+    {
+        trap.timer_player = trap.interval;	//Player离开尖刺陷阱时，立刻使timer满足Player被伤害的条件
+    }
+}
+void DrawTrap(vector<Trap>& traps)
+{
+    for (Trap& trap : traps)
+    {
+        putimage_alpha(trap.x, trap.y, &trap.img);
+    }
+
+}
+void TrapBuildAndAffect(vector<Trap>& traps, Player& player, int delta)//文若改  新增函数引用所有trap相关函数
+{
+    for (Trap& trap : traps)
+    {
+
+        TrapDamagePlayer(trap, player, delta);
+
+    }
+
+
+
+}
+
+
 //透明背景putimage函数
 inline void putimage_alpha(int dst_x, int dst_y, IMAGE* img)
 {
@@ -2002,22 +2658,109 @@ inline void putimage_alpha(int dst_x, int dst_y, IMAGE* img)
 void RoomInit() {
     isWin = false;
     isLose = false;
-    loadskill_skill();
-    platforms.push_back({ 400, 500, 150, 50 });//地面及平台
-    platforms.push_back({ 650, 500, 200, 50 });
-    platforms.push_back({ 0, 640,1280, 80 });
 
+    RoomId = 1;
+    loadskill_skill();
+
+    // 清空之前的平台和敌人
+    platforms.clear();
+    platforms2.clear();
+    Beetles.clear();
+    Beetles2.clear();
+    Novices.clear();
+    Mosquitos.clear();
+    Mosquitos2.clear();
+    Novices2.clear();
+
+    // 初始化房间1的平台
+    platforms.push_back({ 0, 640, 1280, 80 });
+
+    // 初始化房间1的敌人
     Beetles.resize(1);
     Mosquitos.resize(1);
-    BeetleInit(Beetles[0], 650, 500, 650, 850);
+    BeetleInit(Beetles[0], 1000, 640, 800, 1000);
     MosquitoInit(Mosquitos[0], 500, 400);
+    EnemyCounter1 = Beetles.size() + Mosquitos.size()+Novices.size();
 
-    EnemyCounter = Beetles.size() + Mosquitos.size();//敌人数量
+    //初始化房间1的陷阱  
+    for (int i = 0; i < 2; i++)
+    {
+        Trap trap;
+        trap.w = 83, trap.h = 58;
+        trap.x = 600 + i * trap.w, trap.y = 640 - trap.h + 10;
+        loadimage(&trap.img, _T("assets/trap.png"));
+        Traps.push_back(trap);
+    }
 
-    player.x = playerInitx;//玩家初始位置
-    player.y = playerInity;
+    // 初始化房间2的平台
+    platforms2.push_back({ 400, 500, 150, 20 });
+    platforms2.push_back({ 800, 500, 200, 20 });
+    platforms2.push_back({ 200, 400, 200, 20 });
+    platforms2.push_back({ 500, 250, 150, 20 });
+    platforms2.push_back({ 850, 150, 150, 20 });
+    platforms2.push_back({ 0, 640, 1280, 80 });
+
+    // 初始化房间2的敌人
+    Beetles2.resize(2);
+    Mosquitos2.resize(3);
+    BeetleInit(Beetles2[0], 800, 500, 800, 1000);
+    BeetleInit(Beetles2[1], 200, 400, 200, 400);
+    MosquitoInit(Mosquitos2[0], 500, 400);
+    MosquitoInit(Mosquitos2[1], 600, 600);
+    MosquitoInit(Mosquitos2[2], 250, 200);
+    EnemyCounter2 = Beetles2.size() + Mosquitos2.size()+Novices2.size();
+
+    // 初始化房间2的陷阱
+    for (int i = 0; i < 1; i++)                                                   
+    {
+        Trap trap;
+        trap.w = 83, trap.h = 58;
+        trap.x = 500 + i * trap.w + 30, trap.y = 250 - trap.h + 10;
+        loadimage(&trap.img, _T("assets/trap.png"));
+        Traps2.push_back(trap);
+    }
+
+    for (int i = 0; i < 1; i++)
+    {
+        Trap trap;
+        trap.w = 83, trap.h = 58;
+        trap.x = 400 + i * trap.w + 50, trap.y = 500 - trap.h + 10;
+        loadimage(&trap.img, _T("assets/trap.png"));
+        Traps2.push_back(trap);
+    }
+
+    for (int i = 0; i < 5; i++)
+    {
+        Trap trap;
+        trap.w = 83, trap.h = 58;
+        trap.x = 200 + i * trap.w, trap.y = 640 - trap.h + 10;
+        loadimage(&trap.img, _T("assets/trap.png"));
+        Traps2.push_back(trap);
+    }
+
+    //初始化房间3
+    platforms3.push_back({ 0, 640, 1280, 80 });
+
+    Novices3.resize(1);
+    NoviceInit(Novices3[0], 200, 200);
+    EnemyCounter3 = Novices3.size();
+
+    for (int i = 0; i < 2; i++)
+    {
+        Trap trap;
+        trap.w = 83, trap.h = 58;
+        trap.x = 600 + i * trap.w, trap.y = 640 - trap.h + 10;
+        loadimage(&trap.img, _T("assets/trap.png"));
+        Traps3.push_back(trap);
+    }
+
+    // 设置玩家初始位置（房间1）
+    player.x = 1000;
+    player.y = 300;
+    player.collision.x = player.x;
+    player.collision.y = player.y;
+    player.hp = player.maxhp; // 重置血量
 }
-
 void LoadIMAGE() //文若
 {
     loadimage(&img_bk_1, _T("assets/bk/1.jpg"));
@@ -2026,6 +2769,9 @@ void LoadIMAGE() //文若
     loadimage(&img_bk_4, _T("assets/bk/4.jpg"));
     loadimage(&img_bk_5, _T("assets/bk/5.jpg"));
     loadimage(&img_bk_6, _T("assets/bk/6.jpg"));
+    loadimage(&LoseView, _T("assets/bk/Lose.png"));
+    
+    loadimage(&menuBackGround, _T("assets/bk/Menu.jpg"));
 
     loadimage(&img_player_idle_left, _T("assets/Idle/Idle/1.png"));
     loadimage(&img_player_idle_right, _T("assets/Idle/Idle/1_rotated.png"));
@@ -2058,7 +2804,6 @@ void LoadIMAGE() //文若
 
 
 }
-
 //界面相关
 int main() {
     initgraph(1280, 720);
@@ -2072,28 +2817,30 @@ void menuView() {
     InitMenu();//初始化主菜单
 
     BeginBatchDraw();
-    while (1) {//每次循环依次调用每个按钮的触发函数，检测是否触发按钮，如果触发则调用相应的函数
+    while (1) {
+        for (int i = 0; i < 4; i++) {
+            //printf("%d：\n", i);
+            Buttons[i].update();
+        }
         if (Buttons[0].istrigger())
         {
             GameLoop();//游戏主循环
-            //InitMenu();
+            InitMenu();
         }
         if (Buttons[1].istrigger())
         {
             SettingVeiw();//设置界面
-            //InitMenu();
+            InitMenu();
         }
             
         if (Buttons[2].istrigger())
         {   
             IntroductionVeiw();//介绍界面
-            //InitMenu();
+            InitMenu();
         }
-            
-    
-         if (Buttons[3].istrigger())
-            exit(0);
-         FlushBatchDraw();
+        if (Buttons[3].istrigger())
+           exit(0);
+        FlushBatchDraw();
     }
 
     EndBatchDraw();
@@ -2103,12 +2850,6 @@ void menuView() {
 void IntroductionVeiw() {
     InitIntroduction();
     return;
-    //while (1) {
-    //    if (BackButton.istrigger())//如果点击返回，则退出该函数，重新进行主菜单的循环
-    //    {
-    //        return;
-    //    }
-    //}
 }
 void InitIntroduction() {
     //初始化团队介绍界面
@@ -2129,20 +2870,15 @@ void DrawPlatform(const vector<Collision> platforms) {
         solidrectangle((int)platform.x, (int)platform.y, (int)(platform.x + platform.w), (int)(platform.y + platform.h));
     }
 }
-void DrawRoom() {
+void DrawRoom2() {
     setbkcolor(WHITE);
     //cleardevice();
     putimage(0,0,&img_bk_5);
-    DrawPlatform(platforms);
+    DrawPlatform(platforms2);
+    DrawTrap(Traps2);
 }
 void EndChecker() {
-    /*if (room.EnemyCounter == 0) {
-        isWin = true;
-    }
-    else if (player.hp <= 0) {
-        isLose = true;
-    }*/
-    if (EnemyCounter <= 0) {
+    if (Novices3[0].hp <= 0) {
         isWin = true;
     }
     else if (player.hp <= 0) {
@@ -2152,8 +2888,10 @@ void EndChecker() {
 void winView() {
     InitWinView();
     BeginBatchDraw();
+    BackButton.init();
     while (1) {
-        BackButton.init();
+        BackButton.update();
+
         FlushBatchDraw();
         if (BackButton.istrigger()) {
             InitMenu();
@@ -2165,8 +2903,10 @@ void winView() {
 void loseView() {
     InitLoseView();
     BeginBatchDraw();
+    BackButton.init();
     while (1) {
-        BackButton.init();
+        BackButton.update();
+
         FlushBatchDraw();
         if (BackButton.istrigger()) {
             InitMenu();
@@ -2175,6 +2915,20 @@ void loseView() {
         }
     }
 }
+void DrawRoom1() {
+    setbkcolor(WHITE);
+    //cleardevice();
+    putimage(0, 0, &img_bk_5);
+    DrawPlatform(platforms);
+    DrawTrap(Traps);
+}
+void DrawRoom3() {
+    setbkcolor(WHITE);
+    //cleardevice();
+    putimage(0, 0, &img_bk_5);
+    DrawPlatform(platforms3);
+    DrawTrap(Traps3);
+}
 void GameLoop() {
     RoomInit();
     BeginBatchDraw();
@@ -2182,45 +2936,47 @@ void GameLoop() {
     while (!isWin && !isLose) {
         int sta = clock();
         cleardevice();
+        FinishChecker();
         EndChecker();
-        DrawRoom();
-        /*for (auto beetle : room.Beetles) {
-            BeetleBehaviour(beetle, room.platforms);
+
+        if(RoomId==2)
+        {
+            DrawRoom2();
+            for (auto& beetle : Beetles2) {
+                BeetleBehaviour(beetle, platforms2);
+            }
+            for (auto& mosquito : Mosquitos2) {
+                MosquitoBehaviour(mosquito, platforms2);
+            }
+
+            TrapBuildAndAffect(Traps2, player, 60);
         }
-        for (auto mosquito : room.Mosquitos) {
-            MosquitoBehaviour(mosquito, room.platforms);
-        }*/
-        for (auto& beetle : Beetles) {
-            BeetleBehaviour(beetle,platforms);
+        else if (RoomId == 1) {
+            DrawRoom1();
+            for (auto& beetle : Beetles) {
+                BeetleBehaviour(beetle, platforms);
+            }
+            for (auto& mosquito : Mosquitos) {
+                MosquitoBehaviour(mosquito, platforms);
+            }
+
+            TrapBuildAndAffect(Traps, player, 60);
         }
-        for (auto& mosquito : Mosquitos) {
-            MosquitoBehaviour(mosquito, platforms);
+        else if (RoomId == 3) {
+            DrawRoom3();
+            for (auto& novice : Novices3) {
+                NoviceBehaviour(novice, platforms3);
+            }
+            
+            TrapBuildAndAffect(Traps3, player, 60);
         }
-        cout<<EnemyCounter<<endl;
+
+
+
         PlayerUpdate();
-        
 
 
-
-        //if (peekmessage(&msg, 3)) {
-        //    if (msg.vkcode == 'M') {
-        //        isWin = true;
-        //        cout << "win" << endl;
-        //    }
-        //    else if (msg.vkcode == 'N') {
-        //        isLose = true;
-        //        cout << "lose" << endl;
-        //    }
-        //}
-
-        if (isWin) {
-            break;
-            //winView();
-        }
-        else if (isLose) {
-            break;
-            //loseView();
-        }
+        if (isWin||isLose) break;
         FlushBatchDraw();
         int run = clock() - sta;
         if (FPS > run)Sleep(FPS - run);
@@ -2229,23 +2985,40 @@ void GameLoop() {
     if (isWin)winView();
     else if (isLose)loseView();
 }
+void FinishChecker()
+{
+    if (RoomId == 1 && EnemyCounter1 <= 0) {
+        RoomId = 2;
+        player.x = 1000;  // 房间2的安全位置
+        player.y = 450;  // 在平台上方
+        player.collision.x = player.x;
+        player.collision.y = player.y;
+    }
+    if (RoomId == 2 && EnemyCounter2 <= 0) {
+        RoomId = 3;
+        player.x = 200;  
+        player.y = 450; 
+        player.collision.x = player.x;
+        player.collision.y = player.y;
+    }
+}
 void InitLoseView() {
     // 设置红色背景
-    setbkcolor(RED);
-    cleardevice();
+    //setbkcolor(RED);
+    //cleardevice();
+    putimage(0, 0, &LoseView);
+    //// 设置文本样式
+    //settextstyle(200, 0, _T("微软雅黑"));
+    //settextcolor(BLACK);
 
-    // 设置文本样式
-    settextstyle(80, 0, _T("微软雅黑"));
-    settextcolor(WHITE);
+    //// 计算文本位置
+    //int textWidth = textwidth(_T("飞舞"));
+    //int textHeight = textheight(_T("飞舞"));
+    //int x = (1280 - textWidth) / 2;
+    //int y = 200;
 
-    // 计算文本位置
-    int textWidth = textwidth(_T("YOU LOSE"));
-    int textHeight = textheight(_T("YOU LOSE"));
-    int x = (1280 - textWidth) / 2;
-    int y = 200;
-
-    // 绘制失败文本
-    outtextxy(x, y, _T("YOU LOSE"));
+    //// 绘制失败文本
+    //outtextxy(x, y, _T("飞舞"));
 
     // 按钮参数（与胜利界面保持一致）
     int btnWidth = 200;
@@ -2276,15 +3049,6 @@ void InitWinView() {
     int btnHeight = 50;
     int btnY = 400;
 
-    //// 绘制返回主菜单按钮
-    //setfillcolor(WHITE);
-    //fillroundrect(360, btnY, 360 + btnWidth, btnY + btnHeight, 10, 10);
-    //settextstyle(28, 0, _T("微软雅黑"));
-    //outtextxy(360 + 20, btnY + 12, _T("返回主菜单"));
-
-    //// 绘制再来一次按钮
-    //fillroundrect(720, btnY, 720 + btnWidth, btnY + btnHeight, 10, 10);
-    //outtextxy(720 + 40, btnY + 12, _T("再来一次"));
 }
 //设置界面
 void InitMusic() {
@@ -2297,80 +3061,74 @@ void InitMusic() {
     }
     mciSendString("play HK repeat", 0, NULL, NULL);
 }
-void InitMenu() {
-    
-    //LoadIMAGE();
+void InitMenu(){
     InitMusic();
-    // 设置深蓝色背景（模仿空洞骑士风格）
+    // 设置深蓝色背景
     setbkcolor(RGB(30, 32, 40));
     cleardevice();
 
-        Buttons[0].x = 490, Buttons[0].y = 280, Buttons[0].w = 300, Buttons[0].h = 60;
-        Buttons[1].x = 490, Buttons[1].y = 370, Buttons[1].w = 300, Buttons[1].h = 60;
-        Buttons[2].x = 490, Buttons[2].y = 460, Buttons[2].w = 300, Buttons[2].h = 60;
-        Buttons[3].x = 490, Buttons[3].y = 550, Buttons[3].w = 300, Buttons[3].h = 60;
-        ListenButton[0].x=860, ListenButton[0].y=290, ListenButton[0].w=60, ListenButton[0].h=50;
-        ListenButton[1].x=360, ListenButton[1].y=290, ListenButton[1].w=60, ListenButton[1].h=50;
-        BackButton.x=50, BackButton.y=600, BackButton.w=120, BackButton.h=50;BackButton.text=_T("返回");
-        ListenButton[0].text = _T("+");       // 加号按钮
-        ListenButton[1].text = _T("-");       // 减号按钮
 
-        Buttons[0].text = _T("开始游戏");
-        Buttons[1].text = _T("游戏设置");
-        Buttons[2].text = _T("游戏说明");
-        Buttons[3].text = _T("退出游戏");
-        // 绘制标题
-    settextstyle(80, 0, _T("微软雅黑"));
+    putimage(0, 0, &menuBackGround);
+    // 调整按钮位置到屏幕左半部分 (0-640)
+    Buttons[0].x = 320 - 150, Buttons[0].y = 200, Buttons[0].w = 300, Buttons[0].h = 60;
+    Buttons[1].x = 320 - 150, Buttons[1].y = 280, Buttons[1].w = 300, Buttons[1].h = 60;
+    Buttons[2].x = 320 - 150, Buttons[2].y = 360, Buttons[2].w = 300, Buttons[2].h = 60;
+    Buttons[3].x = 320 - 150, Buttons[3].y = 440, Buttons[3].w = 300, Buttons[3].h = 60;
+
+    // 按钮文本保持不变
+    Buttons[0].text = _T("开始游戏");
+    Buttons[1].text = _T("游戏设置");
+    Buttons[2].text = _T("游戏说明");
+    Buttons[3].text = _T("退出游戏");
+
+    ListenButton[0].x = 860, ListenButton[0].y = 290, ListenButton[0].w = 60, ListenButton[0].h = 50;
+    ListenButton[1].x = 360, ListenButton[1].y = 290, ListenButton[1].w = 60, ListenButton[1].h = 50;
+
+    BackButton.x = 50, BackButton.y = 600, BackButton.w = 120, BackButton.h = 50; BackButton.text = _T("返回");
+    ListenButton[0].text = _T("+");       // 加号按钮
+    ListenButton[1].text = _T("-");       // 减号按钮
+
+
+    // 绘制标题 - 在左半屏幕居中
+    settextstyle(60, 0, _T("微软雅黑"));  // 减小字体大小以适应左半屏幕
     settextcolor(WHITE);
     const TCHAR* title = _T("空洞骑士");
 
-    // 计算标题居中位置
     int titleWidth = textwidth(title);
-    outtextxy((1280 - titleWidth) / 2, 100, title);
 
-    // 菜单项参数
-    const int btnWidth = 300;
-    const int btnHeight = 60;
-    const int startY = 280;
-    const int spacing = 30;
+    outtextxy(320 - titleWidth / 2, 80, title);
 
-    // 菜单项文字列表
-    const TCHAR* menuItems[] = {
-        _T("开始游戏"),
-        _T("游戏设置"),
-        _T("游戏说明"),
-        _T("退出游戏")
-    };
 
-    // 绘制菜单按钮
-    settextstyle(36, 0, _T("微软雅黑"));
+    settextstyle(30, 0, _T("微软雅黑"));  // 减小按钮字体大小
     settextcolor(RGB(220, 220, 220));
 
     for (int i = 0; i < 4; i++) {
-        int y = startY + i * (btnHeight + spacing);
+        Button& btn = Buttons[i];
+
         // 绘制发光边框
         setlinecolor(RGB(92, 132, 156));
         setlinestyle(PS_SOLID, 3);
-        roundrect((1280 - btnWidth) / 2 - 5, y - 5, (1280 + btnWidth) / 2 + 5, y + btnHeight + 5, 15, 15);
+        roundrect(btn.x - 5, btn.y - 5, btn.x + btn.w + 5, btn.y + btn.h + 5, 15, 15);
 
         // 绘制按钮主体
         setfillcolor(RGB(45, 49, 66));
-        solidroundrect((1280 - btnWidth) / 2, y, (1280 + btnWidth) / 2, y + btnHeight, 10, 10);
+        solidroundrect(btn.x, btn.y, btn.x + btn.w, btn.y + btn.h, 10, 10);
 
         // 居中文字
-        int textX = (1280 - textwidth(menuItems[i])) / 2;
-        outtextxy(textX, y + (btnHeight - textheight(menuItems[i])) / 2, menuItems[i]);
+        int textX = btn.x + (btn.w - textwidth(btn.text)) / 2;
+        int textY = btn.y + (btn.h - textheight(btn.text)) / 2;
+        outtextxy(textX, textY, btn.text);
     }
 
-    // 绘制底部版权信息
-    settextstyle(20, 0, _T("微软雅黑"));
+    // 绘制底部版权信息 - 放在左半屏幕底部
+    settextstyle(18, 0, _T("微软雅黑"));
     settextcolor(RGB(150, 150, 150));
-    outtextxy(1280 - 220, 720 - 40, _T("Ciallo～(∠・ω< )⌒☆"));
-   
+    outtextxy(320 - 100, 720 - 40, _T("Team Cherry"));
 }
 void SettingVeiw() {
     InitSetting();
     while (1) {
+        BackButton.update();
         if (BackButton.istrigger())//如果点击返回，则退出该函数，重新进行主菜单的循环
         {
             InitMenu();
@@ -2429,9 +3187,11 @@ void DrawVolumeControl() {
     outtextxy(centerX + 235, buttonY + 5, _T("+"));
 }
 void ListenerChecker() {//判断音量键触发，也可以不加按钮，单纯改成按下+-调节会简单一些
+    ListenButton[0].update();
+    ListenButton[1].update();
     if (ListenButton[0].istrigger()) {
         if (currentVolume < 1000) {
-            currentVolume += 50;
+            currentVolume += 100;
 
             DrawVolumeControl();
             // 修正音量设置命令
@@ -2443,7 +3203,7 @@ void ListenerChecker() {//判断音量键触发，也可以不加按钮，单纯
     //调整逻辑
     else if (ListenButton[1].istrigger()) {
         if (currentVolume > 0) {
-            currentVolume -= 50;
+            currentVolume -= 100;
             DrawVolumeControl();
             // 修正音量设置命令
             char cmd[100];
@@ -2453,14 +3213,3 @@ void ListenerChecker() {//判断音量键触发，也可以不加按钮，单纯
         }
     }
 }
-
-
-/*
-PlayerUpdate(int delta, vector<Mosquito> enemys, vector<Beetle> Beetles) {
-    PlayerProcessEvent(getmessage()); // 处理输入
-    Playermove(); // 移动逻辑
-    PlayerPhysicsLogic(delta, enemys, Beetles); // 物理更新
-    PlayerupdateSkillAnimation(); // 技能动画
-    PlayerupdateCooldown(); // 冷却更新
-    PlayerrenderPlayer(); // 渲染
-*/
